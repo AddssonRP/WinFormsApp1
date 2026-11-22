@@ -81,7 +81,7 @@ namespace WinFormsApp1
             lblTitulo.Name = "lblTitulo";
             lblTitulo.Size = new Size(420, 29);
             lblTitulo.TabIndex = 0;
-            lblTitulo.Text = "Desejos Sexshop - App Vers\u00e3o Offline";
+            lblTitulo.Text = "Desejos Sexshop - App Vers\u00e3o Beta";
             // 
             // lblSubtitulo
             // 
@@ -388,7 +388,7 @@ namespace WinFormsApp1
             MinimumSize = new Size(1165, 720);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Desejos Sexshop - App Vers\u00e3o Offline";
+            Text = "Desejos Sexshop - App Vers\u00e3o Beta";
             grpFidelidade.ResumeLayout(false);
             grpFidelidade.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numValorCompra).EndInit();

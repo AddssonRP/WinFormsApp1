@@ -1,0 +1,59 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+	Name="SexVip"
+	Manufacturer="SexVip"
+	Version="1.0.1"
+	UpgradeCode="a9734b1f-d5fd-4f4c-9fb0-c0a422f21eb1"
+	Scope="perUser"
+	InstallerVersion="500">
+	<SummaryInformation Description="Aplicativo local para agendamentos VIP e fidelidade." />
+	<MajorUpgrade DowngradeErrorMessage="Uma versão mais recente do SexVip já está instalada." />
+	<MediaTemplate EmbedCab="yes" />
+
+	<Icon Id="SexVipIcon" SourceFile="..\WinFormsApp1\bin\Release\net10.0-windows\win-x64\installer-publish\SexVip.exe" />
+	<Property Id="ARPPRODUCTICON" Value="SexVipIcon" />
+	<Property Id="ARPURLINFOABOUT" Value="https://github.com/AddssonRP/WinFormsApp1" />
+
+	<Feature Id="Complete" Title="SexVip" Level="1">
+	  <ComponentRef Id="ApplicationFiles" />
+	  <ComponentRef Id="StartMenuShortcut" />
+	  <ComponentRef Id="DesktopShortcut" />
+	</Feature>
+
+	<StandardDirectory Id="DesktopFolder" />
+	<StandardDirectory Id="LocalAppDataFolder">
+	  <Directory Id="INSTALLFOLDER" Name="SexVip" />
+	</StandardDirectory>
+	<StandardDirectory Id="ProgramMenuFolder">
+	  <Directory Id="ProgramMenuDir" Name="SexVip" />
+	</StandardDirectory>
+
+	<Component Id="ApplicationFiles" Directory="INSTALLFOLDER" Guid="2ae3646a-b0d7-4eab-88a5-9d4bfef54c91">
+	  <File Id="SexVipExecutable" Source="..\WinFormsApp1\bin\Release\net10.0-windows\win-x64\installer-publish\SexVip.exe" />
+	  <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+	  <RegistryValue Root="HKCU" Key="Software\SexVip" Name="ApplicationFiles" Type="integer" Value="1" KeyPath="yes" />
+	</Component>
+
+	<Component Id="StartMenuShortcut" Directory="ProgramMenuDir" Guid="acf95c29-26c0-44bf-97ab-024781ea6271">
+	  <Shortcut
+		Id="SexVipStartMenuShortcut"
+		Name="SexVip"
+		Description="Agendamentos VIP e clube de fidelidade"
+		Target="[INSTALLFOLDER]SexVip.exe"
+		WorkingDirectory="INSTALLFOLDER" />
+	  <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
+	  <RegistryValue Root="HKCU" Key="Software\SexVip" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+	</Component>
+
+	<Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="b519f9db-352f-4f34-9597-b239efc605c2">
+	  <Shortcut
+		Id="SexVipDesktopShortcut"
+		Name="SexVip"
+		Description="Agendamentos VIP e clube de fidelidade"
+		Target="[INSTALLFOLDER]SexVip.exe"
+		WorkingDirectory="INSTALLFOLDER"
+		Icon="SexVipIcon" />
+	  <RegistryValue Root="HKCU" Key="Software\SexVip" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+	</Component>
+  </Package>
+</Wix>
