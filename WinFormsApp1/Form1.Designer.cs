@@ -18,7 +18,7 @@ namespace WinFormsApp1
         private System.Windows.Forms.Label lblNome = null!;
         private System.Windows.Forms.TextBox txtNome = null!;
         private System.Windows.Forms.Label lblContato = null!;
-        private System.Windows.Forms.TextBox txtContato = null!;
+        private System.Windows.Forms.MaskedTextBox txtContato = null!;
         private System.Windows.Forms.Label lblData = null!;
         private System.Windows.Forms.DateTimePicker dtpData = null!;
         private System.Windows.Forms.Label lblHora = null!;
@@ -55,7 +55,7 @@ namespace WinFormsApp1
             lblNome = new Label();
             txtNome = new TextBox();
             lblContato = new Label();
-            txtContato = new TextBox();
+            txtContato = new MaskedTextBox();
             lblData = new Label();
             dtpData = new DateTimePicker();
             lblHora = new Label();
@@ -120,9 +120,9 @@ namespace WinFormsApp1
             lblRotuloSaldo.Location = new Point(21, 49);
             lblRotuloSaldo.Margin = new Padding(4, 0, 4, 0);
             lblRotuloSaldo.Name = "lblRotuloSaldo";
-            lblRotuloSaldo.Size = new Size(84, 17);
+            lblRotuloSaldo.Size = new Size(112, 17);
             lblRotuloSaldo.TabIndex = 0;
-            lblRotuloSaldo.Text = "Saldo atual:";
+            lblRotuloSaldo.Text = "Pontuação atual:";
             // 
             // lblSaldoPontos
             // 
@@ -185,9 +185,9 @@ namespace WinFormsApp1
             btnPontos.Location = new Point(21, 238);
             btnPontos.Margin = new Padding(4, 5, 4, 5);
             btnPontos.Name = "btnPontos";
-            btnPontos.Size = new Size(407, 55);
+            btnPontos.Size = new Size(407, 38);
             btnPontos.TabIndex = 6;
-            btnPontos.Text = "Registrar Pontos Offline";
+            btnPontos.Text = "Registrar pontos";
             btnPontos.UseVisualStyleBackColor = true;
             btnPontos.Click += btnPontos_Click;
             // 
@@ -250,7 +250,9 @@ namespace WinFormsApp1
             txtContato.Font = new Font("Arial", 9.5F);
             txtContato.Location = new Point(323, 71);
             txtContato.Margin = new Padding(4, 5, 4, 5);
+            txtContato.Mask = "(00)00000-0000";
             txtContato.Name = "txtContato";
+            txtContato.PromptChar = '_';
             txtContato.Size = new Size(279, 26);
             txtContato.TabIndex = 3;
             // 
@@ -343,7 +345,7 @@ namespace WinFormsApp1
             grpLista.Size = new Size(1285, 260);
             grpLista.TabIndex = 4;
             grpLista.TabStop = false;
-            grpLista.Text = "Agendamentos Salvos Offline (máximo 4 por data)";
+            grpLista.Text = "Registro de Agendamentos (máximo 4 por data)";
             // 
             // dgvAgendamentos
             // 

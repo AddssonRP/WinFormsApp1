@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 
 namespace WinFormsApp1
 {
@@ -10,12 +11,13 @@ namespace WinFormsApp1
         private readonly string caminhoArquivo = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
             "dados_desejos_offline.json");
+        private readonly PersistenciaLocalSqlite persistencia;
         private readonly EstadoLoja estado = new();
         private readonly BindingList<AgendamentoVip> listaBinding = new();
         private ClienteFidelidade? clienteSelecionado;
         private AgendamentoVip? agendamentoEmEdicao;
-        private Label lblPontosLegados = null!;
-        private Button btnVincularSaldoLegado = null!;
+        private Button btnCadastrarCliente = null!;
+        private Button btnConsultarPontos = null!;
         private Button btnApagarAgendamento = null!;
         private Button btnCorrigirAgendamento = null!;
         private bool persistenciaDisponivel;
@@ -23,15 +25,21 @@ namespace WinFormsApp1
         public Form1()
         {
             InitializeComponent();
+            persistencia = new PersistenciaLocalSqlite(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "WinFormsApp1", "dados_desejos.sqlite"),
+                caminhoArquivo);
             ConfigurarControles();
             AplicarTema();
             persistenciaDisponivel = CarregarDadosOffline();
             btnAgendar.Enabled = persistenciaDisponivel;
             btnPontos.Enabled = persistenciaDisponivel;
-            btnVincularSaldoLegado.Enabled = persistenciaDisponivel;
+            btnCadastrarCliente.Enabled = persistenciaDisponivel;
+            btnConsultarPontos.Enabled = persistenciaDisponivel;
             btnApagarAgendamento.Enabled = persistenciaDisponivel;
             btnCorrigirAgendamento.Enabled = persistenciaDisponivel;
             AtualizarInterface();
+            Shown += Form1_Shown;
         }
 
         private void ConfigurarControles()
@@ -45,7 +53,7 @@ namespace WinFormsApp1
             {
                 "Consultoria discreta na loja",
                 "Retirada embalada com sigilo",
-                "SeleÃ§Ã£o de presentes e kits"
+                "selecao de presentes e kits"
             });
             cmbTipo.SelectedIndex = 0;
 
@@ -80,33 +88,51 @@ namespace WinFormsApp1
                 DataPropertyName = nameof(AgendamentoVip.TipoAtendimento),
                 FillWeight = 30
             });
+            dgvAgendamentos.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colPontuacaoAtual",
+                HeaderText = "Pontuação atual",
+                FillWeight = 12,
+                ReadOnly = true
+            });
+            dgvAgendamentos.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCategoria",
+                HeaderText = "Categoria",
+                FillWeight = 12,
+                ReadOnly = true
+            });
             dgvAgendamentos.DataSource = listaBinding;
+            dgvAgendamentos.CellFormatting += dgvAgendamentos_CellFormatting;
             dgvAgendamentos.SelectionChanged += dgvAgendamentos_SelectionChanged;
             dgvAgendamentos.Dock = DockStyle.None;
             dgvAgendamentos.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             dgvAgendamentos.Location = new Point(4, 24);
             dgvAgendamentos.Size = new Size(grpLista.ClientSize.Width - 8, 156);
 
-            lblPontosLegados = new Label
-            {
-                AutoSize = true,
-                Font = new Font("Arial", 8.5F),
-                Location = new Point(21, 112),
-                Name = "lblPontosLegados"
-            };
-            grpFidelidade.Controls.Add(lblPontosLegados);
-
-            btnVincularSaldoLegado = new Button
+            btnCadastrarCliente = new Button
             {
                 Font = new Font("Arial", 8.5F, FontStyle.Bold),
-                Location = new Point(21, 298),
-                Name = "btnVincularSaldoLegado",
-                Size = new Size(407, 30),
-                Text = "Vincular saldo antigo ao cadastro selecionado",
+                Location = new Point(21, 282),
+                Name = "btnCadastrarCliente",
+                Size = new Size(196, 32),
+                Text = "Cadastrar novo cliente",
                 UseVisualStyleBackColor = true
             };
-            btnVincularSaldoLegado.Click += btnVincularSaldoLegado_Click;
-            grpFidelidade.Controls.Add(btnVincularSaldoLegado);
+            btnCadastrarCliente.Click += btnCadastrarCliente_Click;
+            grpFidelidade.Controls.Add(btnCadastrarCliente);
+
+            btnConsultarPontos = new Button
+            {
+                Font = new Font("Arial", 8.5F, FontStyle.Bold),
+                Location = new Point(232, 282),
+                Name = "btnConsultarPontos",
+                Size = new Size(196, 32),
+                Text = "Consultar pontuação",
+                UseVisualStyleBackColor = true
+            };
+            btnConsultarPontos.Click += btnConsultarPontos_Click;
+            grpFidelidade.Controls.Add(btnConsultarPontos);
 
             btnCorrigirAgendamento = new Button
             {
@@ -170,9 +196,10 @@ namespace WinFormsApp1
 
             ConfigurarBotao(btnAgendar, vermelho, branco, dourado);
             ConfigurarBotao(btnPontos, dourado, preto, vermelho);
+            ConfigurarBotao(btnCadastrarCliente, cinzaEscuro, branco, dourado);
+            ConfigurarBotao(btnConsultarPontos, cinzaEscuro, branco, dourado);
             ConfigurarBotao(btnCorrigirAgendamento, dourado, preto, vermelho);
             ConfigurarBotao(btnApagarAgendamento, vermelho, branco, dourado);
-            ConfigurarBotao(btnVincularSaldoLegado, cinzaEscuro, branco, dourado);
         }
 
         private void AplicarTemaRecursivo(Control controle, Color preto, Color cinzaEscuro,
@@ -276,7 +303,13 @@ namespace WinFormsApp1
             grupoAgendamento.Controls.Add(campos);
 
             txtNome = new TextBox { Dock = DockStyle.Fill, MaxLength = 100 };
-            txtContato = new TextBox { Dock = DockStyle.Fill, MaxLength = 40 };
+            txtContato = new MaskedTextBox
+            {
+                Dock = DockStyle.Fill,
+                Mask = "(00)00000-0000",
+                PromptChar = '_',
+                TextMaskFormat = MaskFormat.IncludeLiterals
+            };
             dtpData = new DateTimePicker
             {
                 Dock = DockStyle.Fill,
@@ -291,7 +324,7 @@ namespace WinFormsApp1
             {
                 "Consultoria discreta na loja",
                 "Retirada embalada com sigilo",
-                "SeleÃ§Ã£o de presentes e kits"
+                "selecao de presentes e kits"
             });
             cmbTipo.SelectedIndex = 0;
 
@@ -444,22 +477,9 @@ namespace WinFormsApp1
         {
             try
             {
-                bool arquivoExistia = File.Exists(caminhoArquivo);
-                if (arquivoExistia)
-                {
-                    string json = File.ReadAllText(caminhoArquivo);
-                    EstadoLoja? carregado = JsonSerializer.Deserialize<EstadoLoja>(json);
-                    if (carregado is null || carregado.Agendamentos is null || carregado.Clientes is null ||
-                        carregado.PontosFidelidade < 0 ||
-                        carregado.Clientes.Any(cliente => cliente is null || cliente.Pontos < 0 || string.IsNullOrWhiteSpace(cliente.Contato)))
-                    {
-                        throw new InvalidDataException("O arquivo de dados nÃ£o contÃ©m um cadastro vÃ¡lido.");
-                    }
-
-                    estado.PontosFidelidade = carregado.PontosFidelidade;
-                    estado.Agendamentos = carregado.Agendamentos;
-                    estado.Clientes = carregado.Clientes;
-                }
+                EstadoLoja carregado = persistencia.Carregar();
+                estado.Agendamentos = carregado.Agendamentos;
+                estado.Clientes = carregado.Clientes;
 
                 bool clientesAtualizados = false;
                 foreach (AgendamentoVip agendamento in estado.Agendamentos)
@@ -476,17 +496,31 @@ namespace WinFormsApp1
                     }
                 }
 
-                if (clientesAtualizados || !arquivoExistia)
+                foreach (ClienteFidelidade cliente in estado.Clientes)
+                {
+                    if (cliente.Pontos > 0 && cliente.UltimaPontuacaoEm is null)
+                    {
+                        cliente.UltimaPontuacaoEm = DateTime.Now;
+                        clientesAtualizados = true;
+                    }
+                }
+
+                if (ExpirarPontuacoesVencidas())
+                {
+                    clientesAtualizados = true;
+                }
+
+                if (clientesAtualizados)
                 {
                     SalvarDadosOffline();
                 }
 
                 return true;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or SqliteException)
             {
                 MessageBox.Show(
-                    $"NÃ£o foi possÃ­vel carregar ou preparar os dados offline. O salvamento foi desativado para evitar perda de dados.\n\nDetalhes: {ex.Message}",
+                    $"NÃ£o foi possÃ­vel carregar ou preparar os dados locais. O salvamento foi desativado para evitar perda de dados.\n\nDetalhes: {ex.Message}",
                     "Erro nos dados locais",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -496,11 +530,61 @@ namespace WinFormsApp1
 
         private void SalvarDadosOffline()
         {
-            var opcoes = new JsonSerializerOptions { WriteIndented = true };
-            string json = JsonSerializer.Serialize(estado, opcoes);
-            string arquivoTemporario = caminhoArquivo + ".tmp";
-            File.WriteAllText(arquivoTemporario, json);
-            File.Move(arquivoTemporario, caminhoArquivo, true);
+            persistencia.Salvar(estado);
+        }
+
+        private bool ExpirarPontuacoesVencidas()
+        {
+            bool expirou = false;
+            DateTime limite = DateTime.Now.AddDays(-30);
+            foreach (ClienteFidelidade cliente in estado.Clientes)
+            {
+                if (cliente.Pontos > 0 && cliente.UltimaPontuacaoEm is DateTime ultimaPontuacao &&
+                    ultimaPontuacao <= limite)
+                {
+                    cliente.Pontos = 0;
+                    cliente.UltimaPontuacaoEm = null;
+                    expirou = true;
+                }
+            }
+
+            return expirou;
+        }
+
+        private bool GarantirPontuacoesVigentes()
+        {
+            ClienteFidelidade[] vencidos = estado.Clientes
+                .Where(cliente => cliente.Pontos > 0 && cliente.UltimaPontuacaoEm is DateTime data &&
+                    data <= DateTime.Now.AddDays(-30))
+                .ToArray();
+            if (vencidos.Length == 0)
+            {
+                return true;
+            }
+
+            var valoresAnteriores = vencidos.Select(cliente =>
+                (Cliente: cliente, cliente.Pontos, cliente.UltimaPontuacaoEm)).ToArray();
+            foreach (ClienteFidelidade cliente in vencidos)
+            {
+                cliente.Pontos = 0;
+                cliente.UltimaPontuacaoEm = null;
+            }
+
+            try
+            {
+                SalvarDadosOffline();
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
+            {
+                foreach (var anterior in valoresAnteriores)
+                {
+                    anterior.Cliente.Pontos = anterior.Pontos;
+                    anterior.Cliente.UltimaPontuacaoEm = anterior.UltimaPontuacaoEm;
+                }
+                MostrarErroAoSalvar(ex);
+                return false;
+            }
         }
 
         private void AtualizarInterface()
@@ -513,7 +597,6 @@ namespace WinFormsApp1
 
             dgvAgendamentos.ClearSelection();
             dgvAgendamentos.CurrentCell = null;
-            lblPontosLegados.Text = $"Saldo antigo sem vinculo: {estado.PontosFidelidade} pts";
             AtualizarFidelidadeSelecionada();
         }
 
@@ -532,6 +615,11 @@ namespace WinFormsApp1
 
         private void AtualizarFidelidadeSelecionada()
         {
+            if (persistenciaDisponivel && !GarantirPontuacoesVigentes())
+            {
+                return;
+            }
+
             if (dgvAgendamentos.CurrentRow?.DataBoundItem is not AgendamentoVip agendamento)
             {
                 clienteSelecionado = null;
@@ -548,23 +636,17 @@ namespace WinFormsApp1
                 return;
             }
 
-            lblSaldoPontos.Text = $"Saldo: {clienteSelecionado.Pontos} pts";
+            lblSaldoPontos.Text = $"{clienteSelecionado.Pontos} pts";
 
-            if (clienteSelecionado.Pontos >= 200)
-            {
-                lblNivel.Text = "VIP Ouro";
-                lblNivel.ForeColor = Color.FromArgb(212, 175, 55);
-            }
-            else if (clienteSelecionado.Pontos >= 100)
-            {
-                lblNivel.Text = "VIP Prata";
-                lblNivel.ForeColor = Color.Silver;
-            }
-            else
-            {
-                lblNivel.Text = "Bronze";
-                lblNivel.ForeColor = Color.Brown;
-            }
+            lblNivel.Text = ObterCategoria(clienteSelecionado.Pontos);
+            lblNivel.ForeColor = clienteSelecionado.Pontos >= 200
+                ? Color.FromArgb(212, 175, 55)
+                : clienteSelecionado.Pontos >= 100 ? Color.Silver : Color.Brown;
+        }
+
+        private static string ObterCategoria(int pontos)
+        {
+            return pontos >= 200 ? "VIP Ouro" : pontos >= 100 ? "VIP Prata" : "Bronze";
         }
 
         private void dgvAgendamentos_SelectionChanged(object? sender, EventArgs e)
@@ -572,58 +654,342 @@ namespace WinFormsApp1
             AtualizarFidelidadeSelecionada();
         }
 
-        private void btnVincularSaldoLegado_Click(object? sender, EventArgs e)
+        private void dgvAgendamentos_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
         {
-            ClienteFidelidade? cliente = clienteSelecionado;
+            if (e.RowIndex < 0 || dgvAgendamentos.Rows[e.RowIndex].DataBoundItem is not AgendamentoVip agendamento)
+            {
+                return;
+            }
+
+            ClienteFidelidade? cliente = ObterCliente(agendamento.Contato);
             if (cliente is null)
             {
-                MessageBox.Show("Selecione um cadastro na lista de agendamentos antes de vincular o saldo antigo.",
-                    "Selecione um cadastro", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            if (estado.PontosFidelidade <= 0)
+            if (dgvAgendamentos.Columns[e.ColumnIndex].Name == "colPontuacaoAtual")
             {
-                MessageBox.Show("NÃ£o hÃ¡ saldo antigo sem vÃ­nculo para transferir.",
-                    "Fidelidade", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                e.Value = $"{cliente.Pontos} pts";
+                e.FormattingApplied = true;
             }
+            else if (dgvAgendamentos.Columns[e.ColumnIndex].Name == "colCategoria")
+            {
+                e.Value = ObterCategoria(cliente.Pontos);
+                e.FormattingApplied = true;
+            }
+        }
 
-            if (MessageBox.Show(
-                $"Deseja transferir os {estado.PontosFidelidade} pontos antigos para {cliente.Nome}?",
-                "Confirmar transferÃªncia de saldo",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question) != DialogResult.Yes)
+        private void btnCadastrarCliente_Click(object? sender, EventArgs e)
+        {
+            using var dialogo = new Form
+            {
+                Text = "Cadastrar novo cliente",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(420, 225),
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false
+            };
+            var rotuloNome = new Label { AutoSize = true, Location = new Point(12, 12), Text = "Nome ou apelido:" };
+            var entradaNome = new TextBox { Location = new Point(12, 36), Size = new Size(394, 25), MaxLength = 100 };
+            var rotuloTelefone = new Label { AutoSize = true, Location = new Point(12, 70), Text = "Nº de telefone:" };
+            var entradaTelefone = new MaskedTextBox
+            {
+                Location = new Point(12, 94),
+                Size = new Size(394, 25),
+                Mask = "(00)00000-0000",
+                PromptChar = '_',
+                TextMaskFormat = MaskFormat.IncludeLiterals
+            };
+            var rotuloPontos = new Label { AutoSize = true, Location = new Point(12, 128), Text = "Pontuação atual:" };
+            var entradaPontos = new NumericUpDown
+            {
+                Location = new Point(130, 126),
+                Maximum = int.MaxValue,
+                ThousandsSeparator = true,
+                Width = 150
+            };
+            var cadastrar = new Button
+            {
+                DialogResult = DialogResult.OK,
+                Location = new Point(222, 177),
+                Size = new Size(88, 30),
+                Text = "Cadastrar"
+            };
+            var cancelar = new Button
+            {
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(318, 177),
+                Size = new Size(88, 30),
+                Text = "Cancelar"
+            };
+            dialogo.Controls.AddRange(new Control[]
+            {
+                rotuloNome, entradaNome, rotuloTelefone, entradaTelefone,
+                rotuloPontos, entradaPontos, cadastrar, cancelar
+            });
+            dialogo.AcceptButton = cadastrar;
+            dialogo.CancelButton = cancelar;
+            if (dialogo.ShowDialog(this) != DialogResult.OK)
             {
                 return;
             }
 
-            if (estado.PontosFidelidade > int.MaxValue - cliente.Pontos)
+            string nome = entradaNome.Text.Trim();
+            string contato = entradaTelefone.Text.Trim();
+            if (string.IsNullOrWhiteSpace(nome) || !entradaTelefone.MaskFull)
             {
-                MessageBox.Show("O saldo mÃ¡ximo de pontos seria ultrapassado.",
-                    "Fidelidade", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Informe o nome e o telefone do cliente.",
+                    "Dados obrigatórios", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            int saldoAnterior = estado.PontosFidelidade;
-            int pontosClienteAnterior = cliente.Pontos;
-            estado.PontosFidelidade = 0;
-            cliente.Pontos += saldoAnterior;
+            string contatoNormalizado = NormalizarContato(contato);
+            if (estado.Clientes.Any(cliente => NormalizarContato(cliente.Contato) == contatoNormalizado))
+            {
+                MessageBox.Show(this, "Já existe um cliente cadastrado com esse telefone.",
+                    "Cadastro duplicado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
+            int pontos = decimal.ToInt32(entradaPontos.Value);
+            var novoCliente = new ClienteFidelidade
+            {
+                Nome = nome,
+                Contato = contato,
+                Pontos = pontos,
+                UltimaPontuacaoEm = pontos > 0 ? DateTime.Now : null
+            };
+            estado.Clientes.Add(novoCliente);
             try
             {
                 SalvarDadosOffline();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
             {
-                estado.PontosFidelidade = saldoAnterior;
-                cliente.Pontos = pontosClienteAnterior;
+                estado.Clientes.Remove(novoCliente);
                 MostrarErroAoSalvar(ex);
                 return;
             }
 
-            lblPontosLegados.Text = $"Saldo antigo sem vinculo: {estado.PontosFidelidade} pts";
+            dgvAgendamentos.Refresh();
+            MessageBox.Show(this, $"Cliente {nome} cadastrado com {pontos} pontos.",
+                "Cadastro concluído", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void btnConsultarPontos_Click(object? sender, EventArgs e)
+        {
+            if (!GarantirPontuacoesVigentes())
+            {
+                return;
+            }
+
+            string? identificador = SolicitarIdentificadorCliente();
+            if (string.IsNullOrWhiteSpace(identificador))
+            {
+                return;
+            }
+
+            string nomeBuscado = identificador.Trim();
+            string contatoBuscado = NormalizarContato(nomeBuscado);
+            ClienteFidelidade[] resultados = estado.Clientes.Where(cliente =>
+                string.Equals(cliente.Nome.Trim(), nomeBuscado, StringComparison.OrdinalIgnoreCase) ||
+                NormalizarContato(cliente.Contato) == contatoBuscado).ToArray();
+
+            if (resultados.Length == 0)
+            {
+                MessageBox.Show(this, "Nenhum cadastro corresponde ao nome ou telefone informado.",
+                    "Cadastro não encontrado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (resultados.Length > 1)
+            {
+                MessageBox.Show(this,
+                    "Mais de um cadastro corresponde a esse nome. Consulte usando o telefone para identificar o cliente.",
+                    "Consulta ambígua", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            ClienteFidelidade cliente = resultados[0];
+            MessageBox.Show(this,
+                $"Cliente: {cliente.Nome}\nPontuação atual: {cliente.Pontos} pontos\nCategoria: {ObterCategoria(cliente.Pontos)}",
+                "Consulta de pontuação", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (MessageBox.Show(this, "Adicionar mais pontos?", "Pontuação",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                return;
+            }
+
+            int? pontosAdicionais = SolicitarQuantidadePontos();
+            if (pontosAdicionais.HasValue)
+            {
+                RegistrarPontosAdicionais(cliente, pontosAdicionais.Value);
+            }
+        }
+
+        private int? SolicitarQuantidadePontos()
+        {
+            using var dialogo = new Form
+            {
+                Text = "Adicionar mais pontos",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(330, 125),
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false
+            };
+            var rotulo = new Label { AutoSize = true, Location = new Point(12, 15), Text = "Quantidade de pontos:" };
+            var quantidade = new NumericUpDown
+            {
+                Location = new Point(170, 12),
+                Maximum = int.MaxValue,
+                Minimum = 1,
+                ThousandsSeparator = true,
+                Width = 145
+            };
+            var adicionar = new Button
+            {
+                DialogResult = DialogResult.OK,
+                Location = new Point(126, 72),
+                Size = new Size(88, 30),
+                Text = "Adicionar"
+            };
+            var cancelar = new Button
+            {
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(226, 72),
+                Size = new Size(88, 30),
+                Text = "Cancelar"
+            };
+            dialogo.Controls.AddRange(new Control[] { rotulo, quantidade, adicionar, cancelar });
+            dialogo.AcceptButton = adicionar;
+            dialogo.CancelButton = cancelar;
+            return dialogo.ShowDialog(this) == DialogResult.OK ? decimal.ToInt32(quantidade.Value) : null;
+        }
+
+        private void RegistrarPontosAdicionais(ClienteFidelidade cliente, int pontos)
+        {
+            if (pontos <= 0)
+            {
+                return;
+            }
+
+            if (!GarantirPontuacoesVigentes())
+            {
+                return;
+            }
+
+            if (pontos > int.MaxValue - cliente.Pontos)
+            {
+                MessageBox.Show(this, "O limite máximo de pontos seria ultrapassado.",
+                    "Pontuação", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int pontosAnteriores = cliente.Pontos;
+            DateTime? dataAnterior = cliente.UltimaPontuacaoEm;
+            cliente.Pontos += pontos;
+            cliente.UltimaPontuacaoEm = DateTime.Now;
+            try
+            {
+                SalvarDadosOffline();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
+            {
+                cliente.Pontos = pontosAnteriores;
+                cliente.UltimaPontuacaoEm = dataAnterior;
+                MostrarErroAoSalvar(ex);
+                return;
+            }
+
+            dgvAgendamentos.Refresh();
             AtualizarFidelidadeSelecionada();
+            MessageBox.Show(this, $"{pontos} pontos adicionados ao cadastro de {cliente.Nome}.",
+                "Pontuação atualizada", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private string? SolicitarIdentificadorCliente()
+        {
+            using var dialogo = new Form
+            {
+                Text = "Consultar pontuação",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(410, 125),
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false
+            };
+            var rotulo = new Label
+            {
+                AutoSize = true,
+                Location = new Point(12, 12),
+                Text = "Digite o nome ou telefone do cadastro:"
+            };
+            var entrada = new TextBox
+            {
+                Location = new Point(12, 38),
+                Size = new Size(386, 25),
+                MaxLength = 100
+            };
+            var consultar = new Button
+            {
+                DialogResult = DialogResult.OK,
+                Location = new Point(216, 78),
+                Size = new Size(88, 30),
+                Text = "Consultar"
+            };
+            var cancelar = new Button
+            {
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(310, 78),
+                Size = new Size(88, 30),
+                Text = "Cancelar"
+            };
+            dialogo.Controls.AddRange(new Control[] { rotulo, entrada, consultar, cancelar });
+            dialogo.AcceptButton = consultar;
+            dialogo.CancelButton = cancelar;
+            return dialogo.ShowDialog(this) == DialogResult.OK ? entrada.Text : null;
+        }
+
+        private void Form1_Shown(object? sender, EventArgs e)
+        {
+            string dataHoje = DateTime.Today.ToString("yyyy-MM-dd");
+            AgendamentoVip[] agendamentosDeHoje = estado.Agendamentos
+                .Where(agendamento => agendamento.Data == dataHoje)
+                .OrderBy(agendamento => agendamento.Hora)
+                .ToArray();
+            if (agendamentosDeHoje.Length == 0)
+            {
+                return;
+            }
+
+            string? erroAoRegistrar = null;
+            try
+            {
+                if (!persistencia.RegistrarLembreteDiario(DateTime.Today))
+                {
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
+            {
+                erroAoRegistrar = ex.Message;
+            }
+
+            string resumo = string.Join(Environment.NewLine, agendamentosDeHoje.Select(agendamento =>
+                $"{agendamento.Hora} - {agendamento.Nome} ({agendamento.Contato})"));
+            string detalhePersistencia = erroAoRegistrar is null
+                ? string.Empty
+                : $"\n\nAviso: não foi possível registrar que este lembrete já foi exibido; ele poderá aparecer novamente ao reabrir o aplicativo.\n{erroAoRegistrar}";
+            MessageBox.Show(this,
+                $"Agendamentos de hoje ({agendamentosDeHoje.Length}):\n\n{resumo}{detalhePersistencia}",
+                "Lembrete de agendamentos", MessageBoxButtons.OK,
+                erroAoRegistrar is null ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
         private void btnCorrigirAgendamento_Click(object? sender, EventArgs e)
@@ -665,6 +1031,13 @@ namespace WinFormsApp1
         {
             string nome = txtNome.Text.Trim();
             string contato = txtContato.Text.Trim();
+            if (!txtContato.MaskFull)
+            {
+                MessageBox.Show("Informe o telefone completo no formato (xx)xxxxx-xxxx.",
+                    "Telefone incompleto", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             string dataFormatada = dtpData.Value.ToString("yyyy-MM-dd");
             string hora = cmbHora.SelectedItem?.ToString() ?? string.Empty;
             string tipo = cmbTipo.SelectedItem?.ToString() ?? string.Empty;
@@ -740,7 +1113,7 @@ namespace WinFormsApp1
                 {
                     SalvarDadosOffline();
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
                 {
                     emEdicao.Nome = nomeAnterior;
                     emEdicao.Contato = contatoAnterior;
@@ -802,7 +1175,7 @@ namespace WinFormsApp1
             {
                 SalvarDadosOffline();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
             {
                 estado.Agendamentos.Remove(novoAgendamento);
                 if (novoCliente)
@@ -870,7 +1243,7 @@ namespace WinFormsApp1
             {
                 SalvarDadosOffline();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
             {
                 estado.Agendamentos.Insert(indice, agendamento);
                 MostrarErroAoSalvar(ex);
@@ -892,6 +1265,11 @@ namespace WinFormsApp1
                 return;
             }
 
+            if (!GarantirPontuacoesVigentes())
+            {
+                return;
+            }
+
             decimal valor = numValorCompra.Value;
             if (valor < 10m)
             {
@@ -908,14 +1286,18 @@ namespace WinFormsApp1
                 return;
             }
 
+            int pontosAnteriores = cliente.Pontos;
+            DateTime? dataPontuacaoAnterior = cliente.UltimaPontuacaoEm;
             cliente.Pontos += ganhos;
+            cliente.UltimaPontuacaoEm = DateTime.Now;
             try
             {
                 SalvarDadosOffline();
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
             {
-                cliente.Pontos -= ganhos;
+                cliente.Pontos = pontosAnteriores;
+                cliente.UltimaPontuacaoEm = dataPontuacaoAnterior;
                 MostrarErroAoSalvar(ex);
                 return;
             }
@@ -948,7 +1330,6 @@ namespace WinFormsApp1
 
     public class EstadoLoja
     {
-        public int PontosFidelidade { get; set; }
         public List<AgendamentoVip> Agendamentos { get; set; } = new();
         public List<ClienteFidelidade> Clientes { get; set; } = new();
     }
@@ -958,6 +1339,7 @@ namespace WinFormsApp1
         public string Nome { get; set; } = string.Empty;
         public string Contato { get; set; } = string.Empty;
         public int Pontos { get; set; }
+        public DateTime? UltimaPontuacaoEm { get; set; }
     }
 
     public class AgendamentoVip
